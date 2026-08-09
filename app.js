@@ -1,61 +1,171 @@
 /*
-  CENTRAL BEER
-  Painel protegido por senha
-
-  Senha do painel:
-  B2013a2018
+  Central Beer
+  Login do dono: e-mail + senha
+  Administradores:
+  - bryanyttcontato@gmail.com
+  - dalemengo9@gmail.com
 */
 
-const SENHA_DONO = "B2013a2018";
+const SUPABASE_URL = "https://uvotghmxngvjdtfcbgcl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Hh2haDTRjBANOa37q6VHvw_WT6IY9FR";
+
+const ADMIN_EMAILS = [
+  "bryanyttcontato@gmail.com",
+  "dalemengo9@gmail.com"
+];
+
+const configured =
+  !SUPABASE_URL.includes("COLE_SUA") &&
+  !SUPABASE_ANON_KEY.includes("COLE_SUA");
+
+const sb = configured
+  ? window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY
+    )
+  : null;
 
 const $ = (id) => document.getElementById(id);
 
+const isAdmin = (email) =>
+  !!email &&
+  ADMIN_EMAILS.includes(email.toLowerCase());
 
-/* =========================
-   SUPABASE
-========================= */
+const money = (v) =>
+  v !== null && v !== undefined
+    ? `R$ ${Number(v).toFixed(2).replace(".", ",")}`
+    : "";
 
-const SUPABASE_URL =
-  "https://uvotghmxngvjdtfcbgcl.supabase.co";
-
-const SUPABASE_ANON_KEY =
-  "sb_publishable_Hh2haDTRjBANOa37q6VHvw_WT6IY9FR";
-
-const sb =
-  window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY
-  );
-
-
-/* =========================
-   SEGURANÇA DE HTML
-========================= */
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(
-    /[&<>"']/g,
-    (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[char])
-  );
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[m]));
 }
 
 
 /* =========================
-   DINHEIRO
+   LISTAS PÚBLICAS
 ========================= */
 
-function money(value) {
-  if (value == null) return "";
+function showList(target, items, type) {
+  const el = $(target);
 
-  return `R$ ${Number(value)
-    .toFixed(2)
-    .replace(".", ",")}`;
+  if (!el) return;
+
+  if (!items.length) {
+    el.innerHTML = `
+      <div class="empty">
+        ${
+          type === "promo"
+            ? "Sem promoções cadastradas"
+            : "Nenhum evento cadastrado"
+        }
+        <br>
+        <span class="muted">
+          Adicione pelo painel do dono.
+        </span>
+      </div>
+    `;
+    return;
+  }
+
+  el.innerHTML = items.map(x => {
+
+    if (type === "promo") {
+      return `
+        <article class="card">
+          <h3>
+            🔥 ${escapeHtml(x.nome)}
+          </h3>
+
+          ${
+            x.preco !== null && x.preco !== undefined
+              ? `<div class="price">${money(x.preco)}</div>`
+              : ""
+          }
+
+          <p>
+            ${escapeHtml(x.descricao || "")}
+          </p>
+        </article>
+      `;
+    }
+
+    return `
+      <article class="card">
+
+        <h3>
+          🎉 ${escapeHtml(x.nome)}
+        </h3>
+
+        ${
+          x.data_hora
+            ? `<div class="date">
+                📅 ${escapeHtml(x.data_hora)}
+               </div>`
+            : ""
+        }
+
+        <p>
+          ${escapeHtml(x.descricao || "")}
+        </p>
+
+      </article>
+    `;
+
+  }).join("");
+}
+
+
+async function loadPublic() {
+
+  if (!sb) {
+    showList("promocoesList", [], "promo");
+    showList("eventosList", [], "event");
+    return;
+  }
+
+  const [p, e] = await Promise.all([
+
+    sb
+      .from("promocoes")
+      .select("*")
+      .order("created_at", {
+        ascending: false
+      }),
+
+    sb
+      .from("eventos")
+      .select("*")
+      .order("created_at", {
+        ascending: false
+      })
+
+  ]);
+
+  if (p.error) {
+    console.error("Erro nas promoções:", p.error);
+  }
+
+  if (e.error) {
+    console.error("Erro nos eventos:", e.error);
+  }
+
+  showList(
+    "promocoesList",
+    p.data || [],
+    "promo"
+  );
+
+  showList(
+    "eventosList",
+    e.data || [],
+    "event"
+  );
 }
 
 
@@ -65,9 +175,10 @@ function money(value) {
 
 function modal(html) {
 
-  document
-    .querySelector(".modal")
-    ?.remove();
+  const old =
+    document.querySelector(".modal");
+
+  if (old) old.remove();
 
   const m =
     document.createElement("div");
@@ -82,191 +193,85 @@ function modal(html) {
 
   document.body.appendChild(m);
 
-  m.querySelector(".close")
-    ?.addEventListener(
-      "click",
-      () => m.remove()
-    );
-
   return m;
 }
 
 
+function bindClose() {
+
+  const close =
+    document.querySelector(".close");
+
+  if (close) {
+
+    close.addEventListener(
+      "click",
+      () => {
+        document
+          .querySelector(".modal")
+          ?.remove();
+      }
+    );
+
+  }
+}
+
+
 /* =========================
-   CARREGAR PROMOÇÕES
+   LOGIN DO DONO
 ========================= */
 
-async function loadPromocoes() {
+$("adminBtn").onclick = async () => {
 
-  const element =
-    $("promocoesList");
+  if (!sb) {
 
-  if (!element) return;
+    modal(`
+      <button class="close">×</button>
 
-  const result =
-    await sb
-      .from("promocoes")
-      .select("*")
-      .order(
-        "created_at",
-        {
-          ascending: false
-        }
+      <h2 class="admin-title">
+        ⚙️ Painel do dono
+      </h2>
+
+      <div class="notice">
+        O site ainda não está conectado
+        ao Supabase.
+      </div>
+    `);
+
+    bindClose();
+    return;
+  }
+
+
+  const {
+    data: {
+      session
+    }
+  } = await sb.auth.getSession();
+
+
+  /* Já está logado */
+
+  if (session) {
+
+    if (!isAdmin(session.user.email)) {
+
+      await sb.auth.signOut();
+
+      alert(
+        "Este acesso não é autorizado."
       );
 
-  if (result.error) {
+      return;
+    }
 
-    console.error(result.error);
-
-    element.innerHTML = `
-      <div class="empty">
-        Erro ao carregar promoções.
-      </div>
-    `;
+    openAdmin();
 
     return;
   }
 
-  const items =
-    result.data || [];
 
-  if (!items.length) {
-
-    element.innerHTML = `
-      <div class="empty">
-        Nenhuma promoção cadastrada.
-      </div>
-    `;
-
-    return;
-  }
-
-  element.innerHTML =
-    items.map((item) => `
-
-      <article class="card">
-
-        <h3>
-          🔥 ${escapeHtml(item.nome)}
-        </h3>
-
-        ${
-          item.preco != null
-            ? `
-              <div class="price">
-                ${money(item.preco)}
-              </div>
-            `
-            : ""
-        }
-
-        <p>
-          ${escapeHtml(
-            item.descricao || ""
-          )}
-        </p>
-
-      </article>
-
-    `).join("");
-}
-
-
-/* =========================
-   CARREGAR EVENTOS
-========================= */
-
-async function loadEventos() {
-
-  const element =
-    $("eventosList");
-
-  if (!element) return;
-
-  const result =
-    await sb
-      .from("eventos")
-      .select("*")
-      .order(
-        "created_at",
-        {
-          ascending: false
-        }
-      );
-
-  if (result.error) {
-
-    console.error(result.error);
-
-    element.innerHTML = `
-      <div class="empty">
-        Erro ao carregar eventos.
-      </div>
-    `;
-
-    return;
-  }
-
-  const items =
-    result.data || [];
-
-  if (!items.length) {
-
-    element.innerHTML = `
-      <div class="empty">
-        Nenhum evento cadastrado.
-      </div>
-    `;
-
-    return;
-  }
-
-  element.innerHTML =
-    items.map((item) => `
-
-      <article class="card">
-
-        <h3>
-          🎉 ${escapeHtml(item.nome)}
-        </h3>
-
-        <div class="date">
-          📅 ${escapeHtml(
-            item.data_hora || ""
-          )}
-        </div>
-
-        <p>
-          ${escapeHtml(
-            item.descricao || ""
-          )}
-        </p>
-
-      </article>
-
-    `).join("");
-}
-
-
-/* =========================
-   CARREGAR SITE
-========================= */
-
-async function loadPublic() {
-
-  await Promise.all([
-    loadPromocoes(),
-    loadEventos()
-  ]);
-
-}
-
-
-/* =========================
-   LOGIN POR SENHA
-========================= */
-
-function openLogin() {
+  /* Tela de login */
 
   const m = modal(`
 
@@ -274,140 +279,135 @@ function openLogin() {
       ×
     </button>
 
-    <h2 class="admin-title">
-      ⚙️ Painel do dono
-    </h2>
+    <div class="login">
 
-    <p class="muted">
-      Digite a senha para entrar.
-    </p>
+      <h2 class="admin-title">
+        ⚙️ Acesso do dono
+      </h2>
 
-    <input
-      id="ownerPassword"
-      class="field"
-      type="password"
-      placeholder="Senha"
-      autocomplete="off"
-    >
+      <p class="muted">
+        Entre com seu e-mail e senha.
+      </p>
 
-    <button
-      id="enterAdmin"
-      class="gold-btn"
-    >
-      Entrar
-    </button>
+      <input
+        id="loginEmail"
+        class="field"
+        type="email"
+        placeholder="E-mail"
+      >
 
-    <p
-      id="passwordMessage"
-      class="muted"
-    ></p>
+      <input
+        id="loginPassword"
+        class="field"
+        type="password"
+        placeholder="Senha"
+      >
 
+      <button
+        id="loginBtn"
+        class="gold-btn"
+      >
+        Entrar
+      </button>
+
+      <p
+        id="loginMsg"
+        class="muted"
+      ></p>
+
+    </div>
   `);
 
-
-  const passwordInput =
-    $("ownerPassword");
-
-  const button =
-    $("enterAdmin");
-
-  const message =
-    $("passwordMessage");
+  bindClose();
 
 
-  async function login() {
+  $("loginBtn").onclick =
+    async () => {
 
-    const password =
-      passwordInput.value;
+      const email =
+        $("loginEmail")
+          .value
+          .trim()
+          .toLowerCase();
 
-    if (!password) {
-
-      message.textContent =
-        "Digite a senha.";
-
-      return;
-    }
-
-
-    if (
-      password !==
-      SENHA_DONO
-    ) {
-
-      message.textContent =
-        "Senha incorreta.";
-
-      passwordInput.value = "";
-
-      passwordInput.focus();
-
-      return;
-    }
+      const password =
+        $("loginPassword")
+          .value;
 
 
-    /*
-      Senha correta.
-    */
+      if (!email || !password) {
 
-    sessionStorage.setItem(
-      "centralBeerAdmin",
-      "true"
-    );
+        $("loginMsg").textContent =
+          "Digite o e-mail e a senha.";
 
-    m.remove();
-
-    openAdmin();
-  }
-
-
-  button.onclick = login;
-
-
-  passwordInput
-    .addEventListener(
-      "keydown",
-      (event) => {
-
-        if (
-          event.key === "Enter"
-        ) {
-          login();
-        }
-
+        return;
       }
-    );
 
-}
+
+      if (!isAdmin(email)) {
+
+        $("loginMsg").textContent =
+          "Este e-mail não é autorizado.";
+
+        return;
+      }
+
+
+      $("loginBtn").disabled = true;
+
+      $("loginMsg").textContent =
+        "Entrando...";
+
+
+      const {
+        data,
+        error
+      } =
+        await sb.auth.signInWithPassword({
+          email,
+          password
+        });
+
+
+      if (error) {
+
+        $("loginBtn").disabled = false;
+
+        $("loginMsg").textContent =
+          "Erro: " + error.message;
+
+        return;
+      }
+
+
+      if (
+        !data.user ||
+        !isAdmin(data.user.email)
+      ) {
+
+        await sb.auth.signOut();
+
+        $("loginBtn").disabled = false;
+
+        $("loginMsg").textContent =
+          "Este e-mail não é autorizado.";
+
+        return;
+      }
+
+
+      m.remove();
+
+      openAdmin();
+    };
+};
 
 
 /* =========================
-   VERIFICAR LOGIN
-========================= */
-
-function isAdmin() {
-
-  return (
-    sessionStorage.getItem(
-      "centralBeerAdmin"
-    ) === "true"
-  );
-
-}
-
-
-/* =========================
-   PAINEL
+   PAINEL ADMIN
 ========================= */
 
 async function openAdmin() {
-
-  if (!isAdmin()) {
-
-    openLogin();
-
-    return;
-  }
-
 
   const m = modal(`
 
@@ -420,7 +420,11 @@ async function openAdmin() {
     </h2>
 
     <div class="notice">
-      Acesso autorizado.
+      Administradores autorizados:
+      <br>
+      <b>bryanyttcontato@gmail.com</b>
+      <br>
+      <b>dalemengo9@gmail.com</b>
     </div>
 
 
@@ -490,7 +494,7 @@ async function openAdmin() {
       <textarea
         id="eDesc"
         class="field textarea"
-        placeholder="Descrição"
+        placeholder="Descrição do evento"
       ></textarea>
 
       <button
@@ -515,6 +519,10 @@ async function openAdmin() {
       <h3>
         💰 Controle de dívidas
       </h3>
+
+      <p class="muted">
+        Esta área é privada para os administradores.
+      </p>
 
       <input
         id="dNome"
@@ -545,49 +553,36 @@ async function openAdmin() {
     </div>
 
 
-    <!-- SAIR -->
-
-    <div class="form-section">
-
-      <button
-        id="logout"
-        class="dark-btn"
-      >
-        Sair
-      </button>
-
-    </div>
+    <button
+      id="logout"
+      class="dark-btn"
+    >
+      Sair
+    </button>
 
   `);
 
+  bindClose();
 
-  /* =========================
-     SAIR
-  ========================= */
+
+  /* SAIR */
 
   $("logout").onclick =
-    () => {
+    async () => {
 
-      sessionStorage.removeItem(
-        "centralBeerAdmin"
-      );
+      await sb.auth.signOut();
 
       m.remove();
-
     };
 
 
-  /* =========================
-     ADICIONAR PROMOÇÃO
-  ========================= */
+  /* PROMOÇÃO */
 
   $("addPromo").onclick =
     async () => {
 
       const nome =
-        $("pNome")
-          .value
-          .trim();
+        $("pNome").value.trim();
 
       const preco =
         parseFloat(
@@ -595,9 +590,7 @@ async function openAdmin() {
         );
 
       const descricao =
-        $("pDesc")
-          .value
-          .trim();
+        $("pDesc").value.trim();
 
 
       if (!nome) {
@@ -610,27 +603,23 @@ async function openAdmin() {
       }
 
 
-      const result =
+      const r =
         await sb
           .from("promocoes")
           .insert({
-
             nome,
-
             preco:
               Number.isFinite(preco)
                 ? preco
                 : null,
-
             descricao
-
           });
 
 
-      if (result.error) {
+      if (r.error) {
 
         alert(
-          result.error.message
+          r.error.message
         );
 
         return;
@@ -644,31 +633,22 @@ async function openAdmin() {
 
       await refreshAdmin();
       await loadPublic();
-
     };
 
 
-  /* =========================
-     ADICIONAR EVENTO
-  ========================= */
+  /* EVENTO */
 
   $("addEvent").onclick =
     async () => {
 
       const nome =
-        $("eNome")
-          .value
-          .trim();
+        $("eNome").value.trim();
 
       const data_hora =
-        $("eData")
-          .value
-          .trim();
+        $("eData").value.trim();
 
       const descricao =
-        $("eDesc")
-          .value
-          .trim();
+        $("eDesc").value.trim();
 
 
       if (!nome) {
@@ -681,24 +661,20 @@ async function openAdmin() {
       }
 
 
-      const result =
+      const r =
         await sb
           .from("eventos")
           .insert({
-
             nome,
-
             data_hora,
-
             descricao
-
           });
 
 
-      if (result.error) {
+      if (r.error) {
 
         alert(
-          result.error.message
+          r.error.message
         );
 
         return;
@@ -712,21 +688,16 @@ async function openAdmin() {
 
       await refreshAdmin();
       await loadPublic();
-
     };
 
 
-  /* =========================
-     ADICIONAR DÍVIDA
-  ========================= */
+  /* DÍVIDA */
 
   $("addDebt").onclick =
     async () => {
 
       const nome =
-        $("dNome")
-          .value
-          .trim();
+        $("dNome").value.trim();
 
       const valor =
         parseFloat(
@@ -747,24 +718,20 @@ async function openAdmin() {
       }
 
 
-      const result =
+      const r =
         await sb
           .from("dividas")
           .insert({
-
             nome,
-
             valor,
-
             pago: false
-
           });
 
 
-      if (result.error) {
+      if (r.error) {
 
         alert(
-          result.error.message
+          r.error.message
         );
 
         return;
@@ -776,12 +743,10 @@ async function openAdmin() {
 
 
       await refreshAdmin();
-
     };
 
 
   await refreshAdmin();
-
 }
 
 
@@ -791,13 +756,10 @@ async function openAdmin() {
 
 async function refreshAdmin() {
 
-  if (!isAdmin()) return;
-
-
   const [
-    promos,
-    eventos,
-    dividas
+    p,
+    e,
+    d
   ] = await Promise.all([
 
     sb
@@ -805,9 +767,7 @@ async function refreshAdmin() {
       .select("*")
       .order(
         "created_at",
-        {
-          ascending: false
-        }
+        { ascending: false }
       ),
 
     sb
@@ -815,9 +775,7 @@ async function refreshAdmin() {
       .select("*")
       .order(
         "created_at",
-        {
-          ascending: false
-        }
+        { ascending: false }
       ),
 
     sb
@@ -825,9 +783,7 @@ async function refreshAdmin() {
       .select("*")
       .order(
         "created_at",
-        {
-          ascending: false
-        }
+        { ascending: false }
       )
 
   ]);
@@ -836,30 +792,32 @@ async function refreshAdmin() {
   /* PROMOÇÕES */
 
   $("pList").innerHTML =
-    (promos.data || [])
-      .map(item => `
+    (p.data || [])
+      .map(x => `
 
         <div class="admin-item">
 
           <span>
             <b>
-              ${escapeHtml(item.nome)}
+              ${escapeHtml(x.nome)}
             </b>
 
             ${
-              item.preco != null
-                ? " — " +
-                  money(item.preco)
+              x.preco !== null &&
+              x.preco !== undefined
+                ? money(x.preco)
                 : ""
             }
           </span>
 
           <button
             class="danger"
-            onclick="deleteRow(
-              'promocoes',
-              '${item.id}'
-            )"
+            onclick="
+              deleteRow(
+                'promocoes',
+                '${x.id}'
+              )
+            "
           >
             Excluir
           </button>
@@ -867,39 +825,40 @@ async function refreshAdmin() {
         </div>
 
       `)
-      .join("") ||
-    "<span class='muted'>" +
-    "Nenhuma promoção." +
-    "</span>";
+      .join("")
+    ||
+    "<span class='muted'>Nenhuma promoção.</span>";
 
 
   /* EVENTOS */
 
   $("eList").innerHTML =
-    (eventos.data || [])
-      .map(item => `
+    (e.data || [])
+      .map(x => `
 
         <div class="admin-item">
 
           <span>
 
             <b>
-              ${escapeHtml(item.nome)}
+              ${escapeHtml(x.nome)}
             </b>
 
             —
             ${escapeHtml(
-              item.data_hora || ""
+              x.data_hora || ""
             )}
 
           </span>
 
           <button
             class="danger"
-            onclick="deleteRow(
-              'eventos',
-              '${item.id}'
-            )"
+            onclick="
+              deleteRow(
+                'eventos',
+                '${x.id}'
+              )
+            "
           >
             Excluir
           </button>
@@ -907,59 +866,66 @@ async function refreshAdmin() {
         </div>
 
       `)
-      .join("") ||
-    "<span class='muted'>" +
-    "Nenhum evento." +
-    "</span>";
+      .join("")
+    ||
+    "<span class='muted'>Nenhum evento.</span>";
 
 
   /* DÍVIDAS */
 
   $("dList").innerHTML =
-    (dividas.data || [])
-      .map(item => `
+    (d.data || [])
+      .map(x => `
 
-        <div class="admin-item">
+        <div class="admin-item debt">
 
-          <span>
+          <span
+            class="${x.pago ? "paid" : ""}"
+          >
 
             <b>
-              ${escapeHtml(item.nome)}
+              ${escapeHtml(x.nome)}
             </b>
 
             —
-            ${money(item.valor)}
+            ${money(x.valor)}
 
             ${
-              item.pago
-                ? " (pago)"
+              x.pago
+                ? "(pago)"
                 : ""
             }
 
           </span>
 
+
           <span>
 
             <button
               class="dark-btn"
-              onclick="toggleDebt(
-                '${item.id}',
-                ${!item.pago}
-              )"
+              onclick="
+                toggleDebt(
+                  '${x.id}',
+                  ${!x.pago}
+                )
+              "
             >
               ${
-                item.pago
+                x.pago
                   ? "Desmarcar"
                   : "Marcar pago"
               }
             </button>
 
+
             <button
               class="danger"
-              onclick="deleteRow(
-                'dividas',
-                '${item.id}'
-              )"
+              onclick="
+                deleteRow(
+                  'dividas',
+                  '${x.id}'
+                )
+              "
             >
               Excluir
             </button>
@@ -969,11 +935,9 @@ async function refreshAdmin() {
         </div>
 
       `)
-      .join("") ||
-    "<span class='muted'>" +
-    "Nenhuma dívida." +
-    "</span>";
-
+      .join("")
+    ||
+    "<span class='muted'>Nenhuma dívida cadastrada.</span>";
 }
 
 
@@ -982,45 +946,28 @@ async function refreshAdmin() {
 ========================= */
 
 window.deleteRow =
-  async function (
-    table,
-    id
-  ) {
-
-    if (!isAdmin()) {
-
-      alert(
-        "Acesso negado."
-      );
-
-      return;
-    }
-
+  async (table, id) => {
 
     if (
       !confirm(
         "Excluir este item?"
       )
     ) {
-
       return;
     }
 
 
-    const result =
+    const r =
       await sb
         .from(table)
         .delete()
-        .eq(
-          "id",
-          id
-        );
+        .eq("id", id);
 
 
-    if (result.error) {
+    if (r.error) {
 
       alert(
-        result.error.message
+        r.error.message
       );
 
       return;
@@ -1029,7 +976,6 @@ window.deleteRow =
 
     await refreshAdmin();
     await loadPublic();
-
   };
 
 
@@ -1038,37 +984,19 @@ window.deleteRow =
 ========================= */
 
 window.toggleDebt =
-  async function (
-    id,
-    pago
-  ) {
+  async (id, pago) => {
 
-    if (!isAdmin()) {
-
-      alert(
-        "Acesso negado."
-      );
-
-      return;
-    }
-
-
-    const result =
+    const r =
       await sb
         .from("dividas")
-        .update({
-          pago
-        })
-        .eq(
-          "id",
-          id
-        );
+        .update({ pago })
+        .eq("id", id);
 
 
-    if (result.error) {
+    if (r.error) {
 
       alert(
-        result.error.message
+        r.error.message
       );
 
       return;
@@ -1076,39 +1004,11 @@ window.toggleDebt =
 
 
     await refreshAdmin();
-
   };
 
 
 /* =========================
-   BOTÃO DO PAINEL
-========================= */
-
-$("adminBtn")
-  ?.addEventListener(
-    "click",
-    () => {
-
-      if (isAdmin()) {
-
-        openAdmin();
-
-      } else {
-
-        openLogin();
-
-      }
-
-    }
-  );
-
-
-/* =========================
-   INÍCIO
+   INICIAR
 ========================= */
 
 loadPublic();
-
-console.log(
-  "Central Beer iniciado."
-);
